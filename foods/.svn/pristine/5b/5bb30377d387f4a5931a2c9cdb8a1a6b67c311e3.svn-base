@@ -1,0 +1,62 @@
+# encoding:utf-8
+import uuid
+from django.db import models
+from django.conf import settings
+from system.models import User
+# Create your models here.
+
+
+class Store(models.Model):
+    '''
+    服务项目名称及位置记录
+    用于保存服务的工业园区等
+    可以用来区分每个园区上架/下架的菜品
+    '''
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    head = models.ForeignKey(User, on_delete=models.SET_NULL,
+                             null=True, db_constraint=False, verbose_name=u'项目负责人')
+    name = models.CharField(max_length=50, null=False,
+                            db_index=True, unique=True, verbose_name=u'项目名称')
+    address = models.CharField(
+        max_length=200, null=True, blank=True, verbose_name=u'项目地址')
+    scope = models.FloatField(default=0, null=True,
+                              blank=True, verbose_name=u'服务范围(km)')
+    point = models.CharField(max_length=30, null=True,
+                             blank=True, verbose_name=u'坐标')
+    enable = models.BooleanField(default=True, verbose_name=u'是否启用')
+    fee = models.FloatField(default=0, verbose_name=u'配送费')
+    minQty = models.FloatField(default=0, verbose_name=u'超过后免配送费')
+
+    def __str__(self):
+        return self.name+'(负责人:'+str(self.head)+')'
+
+    class Meta:
+        verbose_name = u'项目资料'
+        verbose_name_plural = verbose_name
+
+
+if 'material' in settings.INSTALLED_APPS:
+    from material.models import Material
+
+    class StoreMats(models.Model):
+        '''
+        项目当前上架菜品管理
+        可以允许重复记录,每次按最近的记录展示
+        该类别暂不添加后台管理,仅用前端
+        '''
+        id = models.UUIDField(
+            primary_key=True, default=uuid.uuid4, editable=False)
+        store = models.ForeignKey(Store, on_delete=models.CASCADE, null=True,
+                                  db_constraint=False, related_name='store_mats', verbose_name=u'项目')
+        material = models.ManyToManyField(
+            Material, null=True, related_name='project_material', db_constraint=False, verbose_name=u'当前上架商品')
+        enable_from = models.DateField(null=False, verbose_name='启用时间')
+        enable_to = models.DateField(
+            null=True, blank=True, verbose_name='停用时间')
+        created_at = models.DateTimeField(
+            auto_now_add=True, verbose_name='创建时间')
+        updated_at = models.DateTimeField(auto_now=True, verbose_name='修改时间')
+
+        class Meta:
+            verbose_name = u'项目上架商品'
+            verbose_name_plural = verbose_name

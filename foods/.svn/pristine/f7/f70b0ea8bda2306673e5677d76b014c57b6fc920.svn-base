@@ -1,0 +1,162 @@
+#encoding:utf-8
+
+from django.db import transaction 
+from rest_framework import serializers
+from store.models import *
+from material.serializers import MaterialSerializers
+from material.models import Material
+from customer.models import Customer
+
+class ProjectMatBannerSerializers(serializers.ModelSerializer):
+    '''
+    项目菜品广告
+    '''
+
+    Created_At = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S')
+    Updated_At = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S')
+
+    material = serializers.SerializerMethodField()
+    def get_material(self,obj):
+        material = Material.objects.select_related().filter(ID__in=obj.MatJson.split(',')).order_by('Price')
+        return MaterialSerializers(material,many=True).data
+
+    class Meta:
+        model = ProjectMatBanner
+        fields = '__all__'
+        #exclude = ('Enable_From','Enable_To','Material')
+
+class ProjectMatsSerializers(serializers.ModelSerializer):
+    '''
+    项目菜品
+    '''
+
+    Created_At = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S')
+    Updated_At = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S')
+
+    material = serializers.SerializerMethodField()
+    def get_material(self,obj):        
+        from datetime import datetime
+        material = Material.objects.select_related().filter(project_material=obj).order_by('Price')
+        data = MaterialSerializers(material,many=True).data
+        try:
+           sellout = ProjectMatSellOut.objects.select_related().get(ProjectMat=obj,date=datetime.now().date())
+           for item in data:
+                if str(item['ID']) in sellout.MatJson.split(','):
+                    item['sellout'] = 1
+                else:
+                    item['sellout'] = 0
+        except Exception as e:
+            print('*******ERROR******')
+            print(e)
+            print('*******ERROR******')
+        
+        return data
+
+    class Meta:
+        model = ProjectMats
+        fields = '__all__'
+        #exclude = ('Enable_From','Enable_To','Material')
+  
+class BussinessMatsSerializers(serializers.ModelSerializer):
+    '''
+    签约客户
+    '''
+
+    class Meta:
+        model = BussinessMats
+        fields = '__all__'
+
+class ProjectsSerializers(serializers.ModelSerializer):
+    '''
+    项目信息
+    '''
+
+    # price_group = serializers.SerializerMethodField()#ReadOnlyField()
+    # def get_price_group(self,obj):
+    #     return [] #作废
+        # from datetime import datetime
+        # from django.db.models import Q
+        # if obj.opentime is None:
+        #     return ''
+        # else:
+        #     opentime = obj.opentime.split(';')
+        #     breakfast = opentime[0]
+        #     lunch = opentime[1]
+        #     dinner = opentime[2]
+        #     now = datetime.now()
+        #     date = now.date()
+        #     ut = ''
+        #     if breakfast != '':                
+        #         starttime = date.strftime('%Y-%m-%d') +' '+breakfast.split('-')[0]
+        #         endtime = date.strftime('%Y-%m-%d') +' '+breakfast.split('-')[1]
+        #         if datetime.strptime(starttime,'%Y-%m-%d %H:%M') <= now and datetime.strptime(endtime,'%Y-%m-%d %H:%M') >= now:
+        #             ut = 'b'               
+        #     if ut == '' and lunch != '':
+        #         lendtime = date.strftime('%Y-%m-%d')+' '+lunch.split('-')[1]
+        #         if datetime.strptime(endtime,'%Y-%m-%d %H:%M') < now and datetime.strptime(lendtime,'%Y-%m-%d %H:%M') > now:
+        #             ut = 'l'    
+        #     if ut == '' and dinner != '':
+        #         ut = 'd'
+        #     bentos = ProjectBento.objects.filter(Projectobj,bld=ut,usedDate=datetime.now().strftime('%Y-%m-%d')).order_by('-ID').first()
+        #     #projectmats = ProjectMats.objects.select_related().filter(Q(Project=obj),Q(UsedTime=ut),Q(Q(Enable_To__gte=datetime.now().strftime('%Y-%m-%d'))|Q(Enable_To__isnull=True)),Q(Enable_From__lte=datetime.now().strftime('%Y-%m-%d'))).order_by('-Enable_From','-Created_At').first()
+        #     price_group = Material.objects.select_related().filter(project_material=projectmats).values('Price').order_by('Price').distinct()
+        #     return price_group
+
+    bentos = serializers.SerializerMethodField()
+    def get_bentos(self,obj):
+        '''
+        获取便当信息
+        '''
+        from datetime import datetime
+        from django.db.models import Q
+        from material.serializers import ProjectBentoSerializers
+        from django.conf import settings
+        bentos = ''
+        if obj.opentime is None and 'booking' not in settings.INSTALLED_APPS:
+            return bentos
+        else:
+            try:
+                if 'booking' in settings.INSTALLED_APPS:
+                    from booking.models import ProjectsCompletion
+                    proj = ProjectsCompletion.objects.get(ID=obj.ID)
+                    breakfast = proj.breakfast_time
+                    lunch = proj.lunch_time
+                    dinner = proj.dinner_time
+                else:
+                    opentime = obj.opentime.split(';')
+                    breakfast = opentime[0]
+                    lunch = opentime[1]
+                    dinner = opentime[2]
+                    
+                now = datetime.now()
+                date = now.date()
+                ut = ''
+                if breakfast != '':                
+                    starttime = date.strftime('%Y-%m-%d') +' '+breakfast.split('-')[0]
+                    endtime = date.strftime('%Y-%m-%d') +' '+breakfast.split('-')[1]
+                    if datetime.strptime(starttime,'%Y-%m-%d %H:%M') <= now and datetime.strptime(endtime,'%Y-%m-%d %H:%M') >= now:
+                        ut = 'b'               
+                if ut == '' and lunch != '':
+                    lendtime = date.strftime('%Y-%m-%d')+' '+lunch.split('-')[1]
+                    if datetime.strptime(endtime,'%Y-%m-%d %H:%M') < now and datetime.strptime(lendtime,'%Y-%m-%d %H:%M') > now:
+                        ut = 'l'    
+                if ut == '' and dinner != '':
+                    ut = 'd'
+                bento = obj.projectbento_set.filter(bld=ut,usedDate=datetime.now().strftime('%Y-%m-%d')).order_by('-ID').first()
+                bentos = ProjectBentoSerializers(bento).data
+                #projectmats = ProjectMats.objects.select_related().filter(Q(Project=obj),Q(UsedTime=ut),Q(Q(Enable_To__gte=datetime.now().strftime('%Y-%m-%d'))|Q(Enable_To__isnull=True)),Q(Enable_From__lte=datetime.now().strftime('%Y-%m-%d'))).order_by('-Enable_From','-Created_At').first()
+                
+                return bentos
+            except Exception as e:
+                raise e
+
+    buessiness = serializers.SerializerMethodField()#ReadOnlyField()
+    def get_buessiness(self,obj):
+        buessiness = Customer.objects.select_related().filter(bussinessmats__Projects_id=obj.ID).values('ID','Company','Settlement_cycle','Mobile')#obj.bussinessmats_set.all().values('Mobile','Name')
+        return buessiness
+
+
+    class Meta:
+        model = store
+        fields = '__all__'
+        #exclude = ('')
